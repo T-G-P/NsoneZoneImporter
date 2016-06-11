@@ -1,6 +1,6 @@
 from nsone import NSONE, Config
 from nsone.rest.errors import AuthException, ResourceException
-from twisted.internet import defer, reactor
+from twisted.internet import defer, reactor, threads
 import os.path
 import csv
 import argparse
@@ -36,7 +36,19 @@ def getArgs():
     return args
 
 
-def transformCsv(reader):
+def readCsv(reader):
+    """Lets csv data be evaluated lazily."""
+    for row in reader:
+        yield row
+
+
+def readDataDict(dataDict):
+    """Lets dictionary data be evaluated lazily."""
+    for k, v in dataDict.iteritems():
+        yield k, v
+
+
+def transformCsv(csvData):
     """
     Transforms the csv to a more easily processed dict to minimize
     rest api calls for creating and loading zones unecessarily.
@@ -47,7 +59,7 @@ def transformCsv(reader):
     """
 
     data = {}
-    for row in reader:
+    for row in csvData:
         record = {
             'Data': row['Data'],
             'Type': row['Type'],
@@ -58,30 +70,33 @@ def transformCsv(reader):
             data[row['Zone']].append(record)
         else:
             data[row['Zone']] = [record]
-
     return data
 
 
-def transformJson(jsonDict):
+def transformJson(jsonData):
     """Not Implemented. Assuming json transformed similar to csv"""
-    return jsonDict
+    return jsonData
 
 
 def loadZoneData(filename):
     extension = os.path.splitext(filename)[1]
     with open(filename, 'rb') as f:
         if extension == '.csv':
-            data = transformCsv(csv.DictReader(f))
+            reader = csv.DictReader(f)
+            dataDict = transformCsv(readCsv(reader))
+            data = readDataDict(dataDict)
         elif extension == '.json':
-            data = transformJson(json.loads(f))
+            dataDict = json.loads(f)
+            data = transformJson(readDataDict(jsonDict))
+
     return data
 
 
 def deleteZoneData(data, nsoneObj):
-    for key in data.keys():
-        deleteZoneRes = deleteZone(key, nsoneObj)
-        deleteZoneRes.addCallback(deleteZoneSuccess, key)
-        deleteZoneRes.addErrback(deleteZoneFailure, key)
+    for zoneKey, _ in data:
+        deleteZoneRes = deleteZone(zoneKey, nsoneObj)
+        deleteZoneRes.addCallback(deleteZoneSuccess, zoneKey)
+        deleteZoneRes.addErrback(deleteZoneFailure, zoneKey)
 
 
 @defer.inlineCallbacks
@@ -95,13 +110,11 @@ def deleteZoneSuccess(response, zone):
 
 
 def deleteZoneFailure(failure, zone):
-    print '{} {}'.format(zone, failure.getErrorMessage())
+    print '{}: {}'.format(zone, failure.getErrorMessage())
 
 
 def importZoneData(data, nsoneObj):
-    # add auth exception error back
-    # add existing zone callback
-    for zoneKey, records in data.iteritems():
+    for zoneKey, records in data:
 
         # could fail, on auth or existing zone
         zone = createZone(zoneKey, nsoneObj)
@@ -110,17 +123,16 @@ def importZoneData(data, nsoneObj):
 
         for rec in records:
             answers = rec['Data'].split()
+
             methodName = 'add_{}'.format(rec['Type'])
 
-            try:
-                add_method = getattr(zone, methodName)
-            except AttributeError:
-                # Invalid type, skip this record
-                continue
+            addMethod = threads.deferToThread(getZoneAddMethod, zone, methodName)
+            addMethod.addCallback(getZoneAddMethodSuccess, methodName, zoneKey)
+            addMethod.addErrback(getZoneAddMethodFailure, methodName, zoneKey)
 
             record = createRecord(addMethod, zoneKey, [answers], rec['TTL'])
             record.addCallback(createRecordSuccess)
-            record.addErrBack(createRecordFailure, [answers])
+            record.addErrback(createRecordFailure, zoneKey, rec['Type'], [answers], nsoneObj)
 
     # reactor.stop()
 
@@ -130,8 +142,8 @@ def createZone(zoneKey, nsoneObj):
     yield nsoneObj.createZone(zoneKey)
 
 
-def createZoneSuccess(response, zone):
-    print 'Successfully Created Zone: {}'.format(zone)
+def createZoneSuccess(response, zoneKey):
+    print 'Successfully Created Zone: {}'.format(zoneKey)
 
 
 def createZoneFailed(failure, zoneKey, nsoneObj):
@@ -142,26 +154,28 @@ def createZoneFailed(failure, zoneKey, nsoneObj):
         yield nsoneObj.loadZone(zoneKey)
 
 
-@defer.inlineCallbacks
+# @defer.inlineCallbacks
 def getZoneAddMethod(zone, methodName):
-    return getattr(zone, methodName)
+    z = yield zone
+    defer.returnValue(getattr(z, methodName))
 
 
-def getAddZoneMethodSuccess(response):
-    print response
+def getZoneAddMethodSuccess(response, methodName, zoneKey):
+    print 'Successfully got {} method for Zone: {}'.format(methodName, zoneKey)
 
 
-def getAddZoneMethodFailure(failure):
+def getZoneAddMethodFailure(failure, methodName, zoneKey):
     print failure.getErrorMessage()
-    # reactor.stop()
 
 
 @defer.inlineCallbacks
 def createRecord(addMethod, zoneKey, answers, ttl):
-    yield addMethod(zoneKey, [answers], ttl=ttl)
+    am = yield addMethod
+    yield am(zoneKey, answers, ttl=ttl)
 
 
 def createRecordSuccess(response):
+    print 'Successfully created a record'
     print response
 
 
