@@ -77,16 +77,17 @@ def loadZoneData(filename):
     return data
 
 
-def deleteZoneData(nsoneObj, data):
+def deleteZoneData(data, nsoneObj):
     for key in data.keys():
-        deleteZone = deleteZone(zoneKey, nsoneObj)
-        deleteZone.addCallback(deleteZoneSuccess)
-        deleteZone.addCallback(deleteZoneFailure)
+        deleteZoneRes = deleteZone(key, nsoneObj)
+        deleteZoneRes.addCallback(deleteZoneSuccess)
+        deleteZoneRes.addErrback(deleteZoneFailure)
+    # reactor.stop()
 
 
 @defer.inlineCallbacks
 def deleteZone(zoneKey, nsoneObj):
-    zone = yield nsoneObj.loadZone(key)
+    zone = yield nsoneObj.loadZone(zoneKey)
     yield zone.delete()
 
 
@@ -102,23 +103,27 @@ def importZoneData(data, nsoneObj):
     # add auth exception error back
     # add existing zone callback
     for zoneKey, records in data.iteritems():
+
         # could fail, on auth or existing zone
         zone = createZone(zoneKey, nsoneObj)
-        zone.addCallback(createZoneSucceeded)
+        zone.addCallback(createZoneSuccess)
         zone.addErrBack(createZoneFailed)
 
         for rec in records:
             answers = rec['Data'].split()
             methodName = 'add_{}'.format(rec['Type'])
-            addMethod = getZoneAddMethod(zone, methodName)
-            addMethod.addCallback(getZoneAddMethodSucceeded)
-            addMethod.addErrback(getZoneAddMethodFailure)
 
-            # record could already exist, add callback chain here
-            # need to load record if record exists
+            try:
+                add_method = getattr(zone, method_name)
+            except AttributeError:
+                # Invalid type, skip this record
+                continue
+
             record = createRecord(addMethod, zoneKey, [answers], rec['TTL'])
             record.addCallback(createRecordSuccess)
             record.addErrBack(createRecordFailure, [answers])
+
+    reactor.stop()
 
 
 @defer.inlineCallbacks
@@ -126,7 +131,7 @@ def createZone(zoneKey, nsoneObj):
     yield nsoneObj.createZone(zoneKey)
 
 
-def createZoneSucceeded(response):
+def createZoneSuccess(response):
     print response
 
 
@@ -140,7 +145,7 @@ def createZoneFailed(failure, zoneKey, nsoneObj):
 
 @defer.inlineCallbacks
 def getZoneAddMethod(zone, methodName):
-    yield getattr(zone, methodName)
+    return getattr(zone, methodName)
 
 
 def getAddZoneMethodSuccess(response):
@@ -187,13 +192,26 @@ def main():
     data = loadZoneData(args.filename)
 
     config = Config()
-    config.createFromAPIKey(args.api_key)
+    data = {
+		'default_key': 'default',
+		'keys': {
+			'default': {
+				'key': args.api_key,
+				'desc': 'imported API key'
+			}
+		},
+        "endpoint": "api.nsone.net"
+	}
+    config.loadFromDict(data)
+    # config.createFromAPIKey(args.api_key)
     config['transport'] = 'twisted'
 
     nsoneObj = NSONE(config=config)
 
     if args.delete:
         deleteZoneData(data, nsoneObj)
+
+    reactor.run()
 
 
 if __name__ == '__main__':
