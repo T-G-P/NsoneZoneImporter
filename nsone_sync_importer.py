@@ -132,7 +132,7 @@ def delete_zone_data(nsone_obj, data):
             print 'Deleting Zone: {}'.format(key)
         except AuthException as e:
             # Invalid api key passed in
-            print '{} {}'.format(nsone.config.getAPIKey(), e.message)
+            print '{} {}'.format(nsone_obj.config.getAPIKey(), e.message)
         except ResourceException as e:
             print '{} {}'.format(key, e.message)
 
