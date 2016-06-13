@@ -38,6 +38,15 @@ class ZoneDataParser(object):
 
     def _readCsv(self, reader):
         """Lets csv data be evaluated lazily. Since file might be huge"""
+        fields = {'Name', 'Zone', 'Type', 'TTL', 'Data'}
+        if not fields.issubset(set(reader.fieldnames)):
+            import sys
+            fieldStr = ', '.join(field for field in fields)
+            try:
+                raise KeyError('CSV must have the following header: {}'.format(fieldStr))
+            except KeyError as e:
+                sys.exit(e.message)
+
         for row in reader:
             yield row
 
