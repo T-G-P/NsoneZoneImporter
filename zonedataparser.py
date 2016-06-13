@@ -73,7 +73,7 @@ class ZoneDataParser(object):
         return data
 
 
-    def _transformJson(jsonData):
+    def _transformJson(self, jsonData):
         """Not Implemented. Assuming json transformed similar to csv"""
         return jsonData
 
