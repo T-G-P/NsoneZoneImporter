@@ -1,6 +1,9 @@
 README
 ======
-This directory contains both synchronous and asynchronous implementations of the zone data importer.
+This directory contains the asynchronous version of the zone data importer. In the 'old' directory
+you will find a simple synchronous implementation as well as an asynchronous implementation. The
+difference between that async implementation and this one is that the script is broken into modules
+and is object oriented.
 
 
 
