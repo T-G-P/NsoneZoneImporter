@@ -39,13 +39,16 @@ www,other.test,A,1800,7.7.7.7
 db,other.test,CNAME,60,www
 ```
 
-#Comparisons between the synchronous and asynchronous behavior
-Running the synchronous code first to import the records. Running it again to see different behavior
-when records already exist. Running it two more times with the 'delete' flag to see that behavior.
-
-Afterward, the same steps are run with the async code
+#Async execution demo
 
 ![alt text][logo]
 
-[logo]: ./ns1.gif
+[logo]: ./ns1_async.gif
+
+
+#sync execution demo
+
+![alt text][logo]
+
+[logo]: ./ns1_sync.gif
 
