@@ -1,6 +1,6 @@
 from nsone import NSONE, Config
 from nsone.rest.errors import AuthException, ResourceException
-from twisted.internet import defer, reactor, threads
+from twisted.internet import defer, reactor, task
 import os.path
 import csv
 import argparse
@@ -37,13 +37,13 @@ def getArgs():
 
 
 def readCsv(reader):
-    """Lets csv data be evaluated lazily."""
+    """Lets csv data be evaluated lazily. Since file might be huge"""
     for row in reader:
         yield row
 
 
 def readDataDict(dataDict):
-    """Lets dictionary data be evaluated lazily."""
+    """Lets dictionary data be evaluated lazily. Since the file might be huge"""
     for k, v in dataDict.iteritems():
         yield k, v
 
@@ -93,15 +93,24 @@ def loadZoneData(filename):
 
 
 def deleteZoneData(data, nsoneObj):
-    for zoneKey, _ in data:
-        deleteZoneRes = deleteZone(zoneKey, nsoneObj)
+    dl = []
+    for zoneKey, records in data:
+        deleteZoneRes = deleteZonesAndRecords(zoneKey, records, nsoneObj)
         deleteZoneRes.addCallback(deleteZoneSuccess, zoneKey)
         deleteZoneRes.addErrback(deleteZoneFailure, zoneKey)
+        dl.append(deleteZoneRes)
+    return defer.DeferredList(dl, fireOnOneErrback=True)
+
 
 
 @defer.inlineCallbacks
-def deleteZone(zoneKey, nsoneObj):
+def deleteZonesAndRecords(zoneKey, records, nsoneObj):
     zone = yield nsoneObj.loadZone(zoneKey)
+
+    for rec in records:
+        record = yield nsoneObj.loadRecord('other.test', 'CNAME', 'other.test')
+
+        yield record.delete()
     yield zone.delete()
 
 
@@ -114,93 +123,136 @@ def deleteZoneFailure(failure, zone):
 
 
 def importZoneData(data, nsoneObj):
+    dl = []
     for zoneKey, records in data:
-
-        # could fail, on auth or existing zone
         zone = createZone(zoneKey, nsoneObj)
-        zone.addCallback(createZoneSuccess, zoneKey)
-        zone.addErrback(createZoneFailed, zoneKey, nsoneObj)
+        zone.addCallback(createZoneSuccess, zoneKey, records, nsoneObj)
+        zone.addErrback(createZoneFailure, zoneKey, records, nsoneObj)
+        dl.append(zone)
+    return defer.DeferredList(dl, fireOnOneErrback=True)
 
-        for rec in records:
-            answers = rec['Data'].split()
-
-            methodName = 'add_{}'.format(rec['Type'])
-
-            addMethod = threads.deferToThread(getZoneAddMethod, zone, methodName)
-            addMethod.addCallback(getZoneAddMethodSuccess, methodName, zoneKey)
-            addMethod.addErrback(getZoneAddMethodFailure, methodName, zoneKey)
-
-            record = createRecord(addMethod, zoneKey, [answers], rec['TTL'])
-            record.addCallback(createRecordSuccess)
-            record.addErrback(createRecordFailure, zoneKey, rec['Type'], [answers], nsoneObj)
-
-    # reactor.stop()
 
 
 @defer.inlineCallbacks
 def createZone(zoneKey, nsoneObj):
-    yield nsoneObj.createZone(zoneKey)
+    zone = yield nsoneObj.createZone(zoneKey)
+    defer.returnValue(zone)
 
 
-def createZoneSuccess(response, zoneKey):
-    print 'Successfully Created Zone: {}'.format(zoneKey)
+def createZoneSuccess(response, zoneKey, records, nsoneObj):
+    dl = []
+    zone = response
+    print 'Successfully Created Zone: {}'.format(zone)
+    for rec in records:
+        answers = rec['Data'].split()
+        methodName = 'add_{}'.format(rec['Type'])
+        addMethod = getattr(zone, methodName)
+
+        record = createRecord(addMethod, zoneKey, [answers], rec['TTL'])
+        record.addCallback(createRecordSuccess)
+        record.addErrback(createRecordFailure, zoneKey, rec['Type'], answers, nsoneObj)
+        dl.append(record)
+    return defer.DeferredList(dl, fireOnOneErrback=True)
 
 
-def createZoneFailed(failure, zoneKey, nsoneObj):
-    if isinstance(failure, AuthException):
-        print failure.getErrorMessage()
-        # reactor.stop()
-    elif isinstance(failure, ResourceException):
-        yield nsoneObj.loadZone(zoneKey)
-
-
-# @defer.inlineCallbacks
-def getZoneAddMethod(zone, methodName):
-    z = yield zone
-    defer.returnValue(getattr(z, methodName))
-
-
-def getZoneAddMethodSuccess(response, methodName, zoneKey):
-    print 'Successfully got {} method for Zone: {}'.format(methodName, zoneKey)
-
-
-def getZoneAddMethodFailure(failure, methodName, zoneKey):
+@defer.inlineCallbacks
+def createZoneFailure(failure, zoneKey, records, nsoneObj):
+    # f = failure.trap(AuthException, ResourceException)
+    f = failure.trap(ResourceException)
     print failure.getErrorMessage()
+
+    # if f == AuthException:
+    #     reactor.removeAll()
+    #     reactor.stop()
+    # elif f == ResourceException:
+    zone = loadZone(zoneKey, nsoneObj)
+    zone.addCallback(loadZoneSuccess, zoneKey, records, nsoneObj)
+    zone.addErrback(loadZoneFailure, zoneKey)
+    yield zone
+
+
+@defer.inlineCallbacks
+def loadZone(zoneKey, nsoneObj):
+    zone = yield nsoneObj.loadZone(zoneKey)
+    defer.returnValue(zone)
+
+def loadZoneSuccess(response, zoneKey, records, nsoneObj):
+    print 'Successfully Loaded Zone: {}'.format(zoneKey)
+    dl = []
+    zone = response
+    for rec in records:
+        answers = rec['Data'].split()
+        methodName = 'add_{}'.format(rec['Type'])
+        addMethod = getattr(zone, methodName)
+
+        record = createRecord(addMethod, zoneKey, [answers], rec['TTL'])
+        record.addCallback(createRecordSuccess)
+        record.addErrback(createRecordFailure, zoneKey, rec['Type'], answers, nsoneObj)
+        dl.append(record)
+    return defer.DeferredList(dl, fireOnOneErrback=True)
+
+
+def loadZoneFailure(failure, zoneKey):
+    print '{}: {}'.format(zoneKey, failure.getErrorMessage())
 
 
 @defer.inlineCallbacks
 def createRecord(addMethod, zoneKey, answers, ttl):
-    am = yield addMethod
-    yield am(zoneKey, answers, ttl=ttl)
+    record = yield addMethod(zoneKey, answers, ttl=ttl)
+    defer.returnValue(record)
 
 
 def createRecordSuccess(response):
-    print 'Successfully created a record'
-    print response
+    print 'Created record: {}'.format(response)
 
 
+@defer.inlineCallbacks
 def createRecordFailure(failure, zoneKey, recType, answers, nsoneObj):
+    f = failure.trap(ResourceException)
+    if f == ResourceException:
+        record = loadRecord(zoneKey, recType, nsoneObj)
+        record.addCallback(loadRecordSuccess, answers)
+        record.addErrback(loadRecordFailure)
+        yield record
+
+
+@defer.inlineCallbacks
+def loadRecord(zoneKey, recType, nsoneObj):
     record = yield nsoneObj.loadRecord(zoneKey, recType, zoneKey)
-    addAnswers = addRecordAnswers(record, answers)
-    addAnswers.addCallback(addRecordAnswersSuccess)
-    addAnswers.addErrback(addRecordAnswersFailure)
+    defer.returnValue(record)
+
+
+@defer.inlineCallbacks
+def loadRecordSuccess(response, answers):
+    print 'Successfully loaded Record: {}'.format(response)
+    record = response
+    addRecordAnswersRes = addRecordAnswers(record, answers)
+    addRecordAnswersRes.addCallback(addRecordAnswersSuccess, answers)
+    addRecordAnswersRes.addErrback(addRecordAnswersFailure)
+    yield addRecordAnswersRes
+
+
+def loadRecordFailure(failure):
+    print failure.getErrorMessage()
 
 
 @defer.inlineCallbacks
 def addRecordAnswers(record, answers):
-    yield record.addAnswers(answers)
+    recordData = yield record.data
+    recordAnswers = {answer['answer'][0] for answer in recordData['answers']}
+    if recordAnswers.intersection(answers[0]):
+        yield record.addAnswers(answers)
 
 
-def addRecordAnswersSuccess(response):
-    print response
+def addRecordAnswersSuccess(response, answers):
+    print 'Successfully processed answers: {}'.format(answers)
 
 
 def addRecordAnswersFailure(failure):
     print failure.getErrorMessage()
-    # reactor.stop()
 
 
-def main():
+def main(reactor):
     args = getArgs()
     data = loadZoneData(args.filename)
 
@@ -211,13 +263,15 @@ def main():
     nsoneObj = NSONE(config=config)
 
     if args.delete:
-        deleteZoneData(data, nsoneObj)
+        # reactor.callWhenRunning(deleteZoneData, data, nsoneObj)
+        return deleteZoneData(data, nsoneObj)
 
     else:
-        importZoneData(data, nsoneObj)
+        # reactor.callWhenRunning(importZoneData, data, nsoneObj)
+        return importZoneData(data, nsoneObj)
 
-    reactor.run()
+    # reactor.run()
 
 
 if __name__ == '__main__':
-    main()
+    task.react(main)
