@@ -106,11 +106,6 @@ def deleteZoneData(data, nsoneObj):
 @defer.inlineCallbacks
 def deleteZonesAndRecords(zoneKey, records, nsoneObj):
     zone = yield nsoneObj.loadZone(zoneKey)
-
-    for rec in records:
-        record = yield nsoneObj.loadRecord('other.test', 'CNAME', 'other.test')
-
-        yield record.delete()
     yield zone.delete()
 
 
@@ -263,14 +258,10 @@ def main(reactor):
     nsoneObj = NSONE(config=config)
 
     if args.delete:
-        # reactor.callWhenRunning(deleteZoneData, data, nsoneObj)
         return deleteZoneData(data, nsoneObj)
 
     else:
-        # reactor.callWhenRunning(importZoneData, data, nsoneObj)
         return importZoneData(data, nsoneObj)
-
-    # reactor.run()
 
 
 if __name__ == '__main__':

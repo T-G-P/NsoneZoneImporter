@@ -90,12 +90,12 @@ def import_zone_data(filename, api_key, **kwargs):
             print 'Added Zone {}'.format(zone)
         except AuthException as e:
             # Invalid api key passed in
-            print '{} {}'.format(api_key, e.message)
+            print e.message
+            return
         except ResourceException as e:
             # zone already exists
             print '{} {}'.format(k, e.message)
             zone = nsone_obj.loadZone(k)
-            print 'Loaded Zone {}'.format(zone)
 
         for rec in v:
 
@@ -103,38 +103,41 @@ def import_zone_data(filename, api_key, **kwargs):
             try:
                 # determine which record type to add using types provided in the file
                 method_name = 'add_{}'.format(rec['Type'])
-                try:
-                    add_method = getattr(zone, method_name)
-                except AttributeError:
-                    # Invalid type, skip this record
-                    continue
+                add_method = getattr(zone, method_name)
                 # data corresponds to the answer and it might have priority values
                 record = add_method(k, [answers], ttl=rec['TTL'])
-                print 'Added record {}'.format(record)
+                print 'Successfully Added record {}'.format(record)
             except ResourceException as e:
                 # record already exists, so add answers to it
+                # Or Invalid add method
                 print '{} {}'.format(rec, e.message)
-                record = nsone_obj.loadRecord(k, rec['Type'], k)
-                print 'Loaded Record {}'.format(record)
                 try:
+                    record = nsone_obj.loadRecord(k, rec['Type'], k)
+                    print 'Successfully loaded record {}'.format(k, rec['Type'])
+                    recordAnswers = {answer['answer'][0] for answer in record.data['answers']}
+                    if recordAnswers.intersection(answers[0]):
+                        record.addAnswers(answers)
+                        print 'Added answer: {}'.format(answers[0])
                     record.addAnswers([answers])
-                    print 'Added Answers {}'.format(answers)
+                    print 'Successfully Processed Answers {}'.format(answers)
                 except ResourceException as e:
-                    # Invalid format for answer, so ignore this answer
-                    print 'Invalid Answers {}'.format(answers)
+                    # Invalid format for answer, so ignore this answer, or invalid record type
+                    print e.message
                     continue
 
 
 def delete_zone_data(nsone_obj, data):
-    for key in data.keys():
+    for key, val in data.iteritems():
         try:
-            nsone_obj.loadZone(key).delete()
-            print 'Deleting Zone: {}'.format(key)
+            zone = nsone_obj.loadZone(key)
+            zone.delete()
         except AuthException as e:
             # Invalid api key passed in
             print '{} {}'.format(nsone_obj.config.getAPIKey(), e.message)
         except ResourceException as e:
             print '{} {}'.format(key, e.message)
+            continue
+        print 'Deleted Zone: {}'.format(key)
 
 def main():
     parser = argparse.ArgumentParser(description='Import some Zone Data to NS1')
