@@ -43,12 +43,12 @@ db,other.test,CNAME,60,www
 
 ![alt text][logo]
 
-[logo]: ./ns1_async.gif
+[logo]: ./nsone_async.gif
 
 
 #sync execution demo
 
 ![alt text][logo]
 
-[logo]: ./ns1_sync.gif
+[logo]: ./nsone_sync.gif
 
