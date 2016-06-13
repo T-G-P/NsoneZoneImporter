@@ -41,14 +41,14 @@ db,other.test,CNAME,60,www
 
 #Async execution demo
 
-![alt text][logo]
+![alt text][async]
 
-[logo]: ./static/nsone_async.gif
+[async]: ./static/nsone_async.gif
 
 
 #sync execution demo
 
-![alt text][logo]
+![alt text][sync]
 
-[logo]: ./static/nsone_sync.gif
+[sync]: ./static/nsone_sync.gif
 
