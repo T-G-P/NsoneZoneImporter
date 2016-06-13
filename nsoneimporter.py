@@ -171,8 +171,7 @@ class NsoneImporter(object):
     def startRequests(self, reactor):
         if self.deleteData:
             return self.deleteZoneData()
-        else:
-            return self.importZoneData()
+        return self.importZoneData()
 
 
     def run(self):
