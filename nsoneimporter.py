@@ -155,8 +155,8 @@ class NsoneImporter(object):
     def addRecordAnswers(self, record, answers):
         recordData = yield record.data
         recordAnswers = {answer['answer'][0] for answer in recordData['answers']}
-        if recordAnswers.intersection(answers[0]):
-            print 'Adding answer: {}'.format(answers[0])
+        if not recordAnswers.intersection(answers):
+            print 'Adding answer: {}'.format(answers)
             yield record.addAnswers(answers)
 
 
