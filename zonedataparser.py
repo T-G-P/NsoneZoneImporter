@@ -7,6 +7,11 @@ class ZoneDataParser(object):
 
 
     def _isValidFile(self, parser, arg):
+        """Checks whether the file exists on the filesystem
+        Raises an error if it doesnt exist or returns the argument
+        if it does
+        """
+
         arg = os.path.abspath(arg)
         if not os.path.exists(arg):
             parser.error("The file %s does not exist!" % arg)
@@ -15,6 +20,8 @@ class ZoneDataParser(object):
 
 
     def getArgs(self):
+        """Reads arguments from the command line and returns them"""
+
         parser = argparse.ArgumentParser(description='Import some Zone Data to NS1')
         parser.add_argument("-a", "--apikey",
                             dest="apikey",
@@ -37,7 +44,10 @@ class ZoneDataParser(object):
 
 
     def _readCsv(self, reader):
-        """Lets csv data be evaluated lazily. Since file might be huge"""
+        """Lets csv data be evaluated lazily. Since file might be huge
+        Exits if the fields in the CSV are invalid
+        """
+
         fields = {'Name', 'Zone', 'Type', 'TTL', 'Data'}
         if not fields.issubset(set(reader.fieldnames)):
             import sys
@@ -53,6 +63,7 @@ class ZoneDataParser(object):
 
     def _readDataDict(self, dataDict):
         """Lets dictionary data be evaluated lazily. Since the file might be huge"""
+
         for k, v in dataDict.iteritems():
             yield k, v
 
@@ -84,10 +95,16 @@ class ZoneDataParser(object):
 
     def _transformJson(self, jsonData):
         """Not Implemented. Assuming json transformed similar to csv"""
+
         return jsonData
 
 
     def loadZoneData(self, filename):
+        """
+        Based on the file extension, a data dictionary is
+        populated and returned
+        """
+
         extension = os.path.splitext(filename)[1]
         with open(filename, 'rb') as f:
             if extension == '.csv':
