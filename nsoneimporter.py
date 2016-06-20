@@ -85,7 +85,7 @@ class NsoneImporter(object):
         Triggered if there are errors when calling the api
 
         Args:
-            failure (nsone.rest.errors.ResourceException)
+            failure (twisted.python.failure)
             zoneName (str):  The zone name
         """
 
